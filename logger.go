@@ -96,6 +96,9 @@ type Logger struct {
 
 func (l *Logger) Log(level logging.Level, args ...interface{}) {
 	_ = l.writer.Write(level, args, l.fields)
+	if level == logging.PanicLevel {
+		panic(fmt.Sprint(args...))
+	}
 }
 
 func (l *Logger) WithFields(fields logging.Fields) logging.Logger {
