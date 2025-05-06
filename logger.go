@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/InfluxCommunity/influxdb3-go/v2/influxdb3"
 	"github.com/hadi77ir/go-logging"
+	"os"
 	"time"
 )
 
@@ -96,6 +97,10 @@ type Logger struct {
 
 func (l *Logger) Log(level logging.Level, args ...interface{}) {
 	_ = l.writer.Write(level, args, l.fields)
+
+	if level == logging.FatalLevel {
+		os.Exit(1)
+	}
 	if level == logging.PanicLevel {
 		panic(fmt.Sprint(args...))
 	}
