@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"sync"
 	"time"
@@ -164,8 +163,12 @@ func (l *Logger) WithFields(fields logging.Fields) logging.Logger {
 }
 
 func (l *Logger) WithAdditionalFields(fields logging.Fields) logging.Logger {
-	merged := maps.Clone(fields)
-	maps.Copy(merged, l.fields)
+	merged := fields
+	for k, v := range l.fields {
+		if _, ok := merged[k]; !ok {
+			merged[k] = v
+		}
+	}
 	return l.WithFields(merged)
 }
 
