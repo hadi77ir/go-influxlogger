@@ -3,10 +3,12 @@ package influxlogger
 import (
 	"context"
 	"fmt"
-	"github.com/InfluxCommunity/influxdb3-go/v2/influxdb3"
-	"github.com/hadi77ir/go-logging"
+	"maps"
 	"os"
 	"time"
+
+	"github.com/InfluxCommunity/influxdb3-go/v2/influxdb3"
+	"github.com/hadi77ir/go-logging"
 )
 
 type LogWriter struct {
@@ -111,6 +113,12 @@ func (l *Logger) WithFields(fields logging.Fields) logging.Logger {
 		writer: l.writer,
 		fields: fields,
 	}
+}
+
+func (l *Logger) WithAdditionalFields(fields logging.Fields) logging.Logger {
+	merged := maps.Clone(fields)
+	maps.Copy(merged, l.fields)
+	return l.WithFields(merged)
 }
 
 func (l *Logger) Logger() logging.Logger {

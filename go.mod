@@ -6,7 +6,7 @@ toolchain go1.24.2
 
 require (
 	github.com/InfluxCommunity/influxdb3-go/v2 v2.6.0
-	github.com/hadi77ir/go-logging v0.0.0-20250506131706-8ae98eda20fa
+	github.com/hadi77ir/go-logging v0.0.0-20250611055201-4beb4c2cd9d1
 )
 
 require (
