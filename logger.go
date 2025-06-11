@@ -2,23 +2,17 @@ package influxlogger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/InfluxCommunity/influxdb3-go/v2/influxdb3"
 	"github.com/hadi77ir/go-logging"
+	"github.com/hadi77ir/go-ringqueue"
 )
-
-type LogWriter struct {
-	client      *influxdb3.Client
-	measurement string
-	appName     string
-	host        string
-	tags        map[logging.Level]map[string]string
-	fields      map[string]any
-}
 
 var severityMap = map[logging.Level]string{
 	logging.TraceLevel: "debug",
@@ -40,14 +34,35 @@ var severityCode = map[logging.Level]int{
 	logging.PanicLevel: 0,
 }
 
-func NewLogWriter(connection string, appName, host, procId string) (*LogWriter, error) {
+type LogWriter struct {
+	client        *influxdb3.Client
+	measurement   string
+	appName       string
+	host          string
+	tags          map[logging.Level]map[string]string
+	fields        map[string]any
+	flushInterval time.Duration
+	buffer        ringqueue.RingQueue[*influxdb3.Point]
+	flushMutex    sync.Mutex
+}
+
+func NewLogWriter(connection string, appName, host, procId string, flushInterval time.Duration, bufferLimit int) (*LogWriter, error) {
 	client, err := influxdb3.NewFromConnectionString(connection)
 	if err != nil {
 		return nil, err
 	}
-
+	if flushInterval < 0 {
+		return nil, errors.New("invalid flush interval")
+	}
 	writer := &LogWriter{
-		client: client,
+		client:        client,
+		flushInterval: flushInterval,
+	}
+	if bufferLimit > 0 {
+		writer.buffer, err = ringqueue.NewUnsafe[*influxdb3.Point](bufferLimit, ringqueue.WhenFullError, ringqueue.WhenEmptyError, nil)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// initialize tags
 	for level, keyword := range severityMap {
@@ -71,11 +86,15 @@ func NewLogWriter(connection string, appName, host, procId string) (*LogWriter, 
 }
 
 func (w *LogWriter) Write(level logging.Level, args []any, fields logging.Fields) error {
-	point := influxdb3.NewPoint(w.measurement, w.tags[level], w.getFields(level, args, fields), time.Now())
-	return w.client.WritePoints(context.Background(), []*influxdb3.Point{point})
+	timestamp := time.Now()
+	point := influxdb3.NewPoint(w.measurement, w.tags[level], w.getFields(level, args, fields, timestamp), timestamp)
+	if w.flushInterval == 0 || w.buffer == nil {
+		return w.writePoints(context.Background(), []*influxdb3.Point{point})
+	}
+	return w.writeBuffered(context.Background(), point)
 }
 
-func (w *LogWriter) getFields(level logging.Level, args []any, fields logging.Fields) map[string]any {
+func (w *LogWriter) getFields(level logging.Level, args []any, fields logging.Fields, timestamp time.Time) map[string]any {
 	msg := fmt.Sprint(args...)
 	m := map[string]any{}
 	if fields != nil {
@@ -87,9 +106,38 @@ func (w *LogWriter) getFields(level logging.Level, args []any, fields logging.Fi
 		m[key] = value
 	}
 	m["severity_code"] = severityCode[level]
-	m["timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	m["timestamp"] = timestamp.UTC().Format(time.RFC3339)
 	m["message"] = msg
 	return m
+}
+
+func (w *LogWriter) writeBuffered(ctx context.Context, point *influxdb3.Point) error {
+	w.flushMutex.Lock()
+	defer w.flushMutex.Unlock()
+	if w.buffer.Len() == w.buffer.Cap() {
+		err := w.flushBuffer(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := w.buffer.Push(point)
+	return err
+}
+
+func (w *LogWriter) flushBuffer(ctx context.Context) error {
+	points := make([]*influxdb3.Point, w.buffer.Len())
+	for i := 0; i < w.buffer.Len(); i++ {
+		point, _, err := w.buffer.Pop()
+		if err != nil {
+			break
+		}
+		points[i] = point
+	}
+	return w.writePoints(ctx, points)
+}
+
+func (w *LogWriter) writePoints(ctx context.Context, points []*influxdb3.Point) error {
+	return w.client.WritePoints(ctx, points)
 }
 
 type Logger struct {
@@ -126,7 +174,10 @@ func (l *Logger) Logger() logging.Logger {
 }
 
 func NewLogger(connection, appName, host, procId string) (logging.Logger, error) {
-	writer, err := NewLogWriter(connection, appName, host, procId)
+	return NewBufferedLogger(connection, appName, host, procId, 0, 0)
+}
+func NewBufferedLogger(connection string, appName, host, procId string, flushInterval time.Duration, bufferLimit int) (*Logger, error) {
+	writer, err := NewLogWriter(connection, appName, host, procId, flushInterval, bufferLimit)
 	if err != nil {
 		return nil, err
 	}

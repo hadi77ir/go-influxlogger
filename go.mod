@@ -7,6 +7,7 @@ toolchain go1.24.2
 require (
 	github.com/InfluxCommunity/influxdb3-go/v2 v2.6.0
 	github.com/hadi77ir/go-logging v0.0.0-20250611055201-4beb4c2cd9d1
+	github.com/hadi77ir/go-ringqueue v0.0.0-20250428224705-41a7607328bb
 )
 
 require (
@@ -17,6 +18,7 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+	github.com/pion/transport/v3 v3.0.7 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6 // indirect
 	golang.org/x/mod v0.24.0 // indirect
